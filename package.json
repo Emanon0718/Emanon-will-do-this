@@ -1,0 +1,12 @@
+{
+  "name": "trending-email",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "resend": "^6.0.0"
+  }
+}
