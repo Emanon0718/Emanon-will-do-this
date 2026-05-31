@@ -98,18 +98,20 @@ function buildHtml(top10, today) {
     const starsFmt = stars >= 1000 ? (stars / 1000).toFixed(1) + "k" : String(stars);
     return `
     <tr>
-      <td style="padding:14px 16px;border:1px solid #e1e4e8;border-radius:8px;margin-bottom:8px;display:block;background:#fff">
+      <td style="padding:16px 18px;border:1px solid #30363d;border-radius:10px;margin-bottom:12px;display:block;background:#161b22">
         <table cellpadding="0" cellspacing="0" border="0" style="width:100%">
           <tr>
-            <td style="font-size:18px;font-weight:700;color:#0366d6;padding-right:10px;vertical-align:top">#${i + 1}</td>
+            <td style="vertical-align:top;padding-right:14px">
+              <span style="display:inline-block;width:30px;height:30px;line-height:30px;text-align:center;border-radius:50%;background:#1f6feb;color:#fff;font-size:13px;font-weight:700">${i + 1}</span>
+            </td>
             <td style="vertical-align:top;width:100%">
-              <a href="${r.url}" style="font-size:16px;font-weight:600;color:#0366d6;text-decoration:none">${r.name}</a>
-              ${r.descZh ? `<p style="margin:6px 0 0 0;font-size:14px;color:#24292e">${r.descZh}</p>` : ""}
-              ${r.description ? `<p style="margin:4px 0 0 0;font-size:12px;color:#6a737d">${r.description}</p>` : ""}
-              <div style="margin-top:8px;font-size:13px;color:#586069">
+              <a href="${r.url}" style="font-size:16px;font-weight:600;color:#58a6ff;text-decoration:none">${r.name}</a>
+              ${r.descZh ? `<p style="margin:8px 0 0 0;font-size:14px;color:#e6edf3;line-height:1.5">${r.descZh}</p>` : ""}
+              ${r.description ? `<p style="margin:4px 0 0 0;font-size:12px;color:#8b949e;line-height:1.4">${r.description}</p>` : ""}
+              <div style="margin-top:10px;font-size:13px;color:#8b949e">
                 ${r.language ? `<span>${langDot(r.language)} ${r.language} &nbsp;</span>` : ""}
                 <span>⭐ ${starsFmt}</span>
-                <span style="margin-left:12px">📈 ${r.starsToday}</span>
+                <span style="margin-left:14px">📈 ${r.starsToday}</span>
               </div>
             </td>
           </tr>
@@ -121,15 +123,15 @@ function buildHtml(top10, today) {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#f6f8fa;margin:0;padding:20px">
-<table cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;margin:0 auto;background:#f6f8fa">
-  <tr><td style="padding:0 0 16px 0">
-    <h2 style="margin:0;font-size:22px;color:#24292e">🔥 GitHub 每日热门仓库 — ${today}</h2>
-    <p style="margin:4px 0 0 0;font-size:13px;color:#586069">今日 Top ${top10.length}</p>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;margin:0;padding:24px 20px">
+<table cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;margin:0 auto;background:#0d1117">
+  <tr><td style="padding:0 0 20px 0">
+    <h2 style="margin:0;font-size:22px;color:#e6edf3">🔥 GitHub 每日热门仓库 — ${today}</h2>
+    <p style="margin:6px 0 0 0;font-size:13px;color:#8b949e">今日 Top ${top10.length}</p>
   </td></tr>
   ${cards}
-  <tr><td style="padding-top:20px;text-align:center">
-    <p style="font-size:11px;color:#959da5">由 <a href="https://github.com/Emanon0718/Emanon-will-do-this" style="color:#0366d6">GitHub Trending Bot</a> 自动发送</p>
+  <tr><td style="padding-top:24px;text-align:center">
+    <p style="font-size:11px;color:#484f58">由 <a href="https://github.com/Emanon0718/Emanon-will-do-this" style="color:#58a6ff;text-decoration:none">GitHub Trending Bot</a> 自动发送</p>
   </td></tr>
 </table>
 </body>
