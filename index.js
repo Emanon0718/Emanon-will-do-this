@@ -41,14 +41,14 @@ console.log(`获取到 ${repos.length} 个热门仓库`);
 
 const top10 = repos.slice(0, 10);
 
-const lines = [`GitHub Trending Daily — ${today}`, "", "Today's Top Repos:", ""];
+const lines = [`GitHub 每日热门仓库 — ${today}`, "", "今日 Top 10:", ""];
 
 for (let i = 0; i < top10.length; i++) {
   const r = top10[i];
   lines.push(`${i + 1}. ${r.name}`);
-  if (r.description) lines.push(`   ${r.description}`);
-  lines.push(`   Language: ${r.language || "Unknown"} | ${r.url}`);
-  lines.push(`   Total ⭐: ${r.totalStars} | ${r.starsToday}`);
+  lines.push(`   ${r.description}`);
+  lines.push(`   语言: ${r.language || "未知"} | ${r.url}`);
+  lines.push(`   总 ⭐: ${r.totalStars} | ${r.starsToday}`);
   lines.push("");
 }
 
@@ -63,7 +63,7 @@ const resend = new Resend(RESEND_API_KEY);
 const { data, error } = await resend.emails.send({
   from: `GitHub Trending <${FROM_EMAIL}>`,
   to: [TO_EMAIL],
-  subject: `GitHub Trending Daily — ${today}`,
+  subject: `GitHub 每日热门仓库 — ${today}`,
   text: body,
 });
 
