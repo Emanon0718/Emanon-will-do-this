@@ -11,14 +11,47 @@ if (!RESEND_API_KEY || !TO_EMAIL) {
   process.exit(1);
 }
 
-const today = new Date().toISOString().split("T")[0];
+// 重试助手：最多重试 maxRetries 次，每次延迟翻倍
+async function retry(fn, { maxRetries = 3, delayMs = 2000, label = "" } = {}) {
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === maxRetries) throw err;
+      console.error(`  ${label}第 ${i + 1} 次失败: ${err.message}`);
+      console.error(`  ${delayMs}ms 后重试...`);
+      await new Promise(r => setTimeout(r, delayMs));
+      delayMs *= 2;
+    }
+  }
+}
 
+// 根据日期自动判断模式：每月 1 号 → monthly，周一 → weekly，否则 daily
+// 可用 SINCE 环境变量手动覆盖
+const now = new Date();
+const SINCE = process.env.SINCE ||
+  (now.getUTCDate() === 1 ? "monthly" :
+   now.getUTCDay() === 1 ? "weekly" :
+   "daily");
+
+const periodLabels = { daily: "每日", weekly: "本周", monthly: "本月" };
+const periodLabel = periodLabels[SINCE] || "每日";
+
+const today = now.toISOString().split("T")[0];
+
+console.log(`模式: ${periodLabel} (since=${SINCE})`);
 console.log(`正在获取 ${today} 的 GitHub Trending...`);
 
-const html = await fetch("https://github.com/trending", {
-  headers: { "User-Agent": "Trending-Email-Bot" },
-  signal: AbortSignal.timeout(30000),
-}).then((r) => r.text());
+const html = await retry(
+  () => fetch(`https://github.com/trending?since=${SINCE}`, {
+    headers: { "User-Agent": "Trending-Email-Bot" },
+    signal: AbortSignal.timeout(30000),
+  }).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  }),
+  { label: "抓取" }
+);
 
 const $ = cheerio.load(html);
 
@@ -65,7 +98,7 @@ results.forEach((res, i) => {
   }
 });
 
-const lines = [`GitHub 每日热门仓库 — ${today}`, "", "今日 Top 10:", ""];
+const lines = [`GitHub ${periodLabel}热门仓库 — ${today}`, "", "今日 Top 10:", ""];
 
 for (let i = 0; i < top10.length; i++) {
   const r = top10[i];
@@ -126,7 +159,7 @@ function buildHtml(top10, today) {
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;margin:0;padding:24px 20px">
 <table cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;margin:0 auto;background:#0d1117">
   <tr><td style="padding:0 0 20px 0">
-    <h2 style="margin:0;font-size:22px;color:#e6edf3">🔥 GitHub 每日热门仓库 — ${today}</h2>
+    <h2 style="margin:0;font-size:22px;color:#e6edf3">🔥 GitHub ${periodLabel}热门仓库 — ${today}</h2>
     <p style="margin:6px 0 0 0;font-size:13px;color:#8b949e">今日 Top ${top10.length}</p>
   </td></tr>
   ${cards}
@@ -146,13 +179,20 @@ console.log("--- 预览结束 ---");
 
 const resend = new Resend(RESEND_API_KEY);
 
-const { data, error } = await resend.emails.send({
-  from: `GitHub Trending <${FROM_EMAIL}>`,
-  to: [TO_EMAIL],
-  subject: `GitHub 每日热门仓库 — ${today}`,
-  text: body,
-  html: htmlBody,
-});
+const { data, error } = await retry(
+  async () => {
+    const result = await resend.emails.send({
+      from: `GitHub Trending <${FROM_EMAIL}>`,
+      to: [TO_EMAIL],
+      subject: `GitHub ${periodLabel}热门仓库 — ${today}`,
+      text: body,
+      html: htmlBody,
+    });
+    if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+    return result;
+  },
+  { label: "发送" }
+);
 
 if (error) {
   console.error("邮件发送失败:", error);
