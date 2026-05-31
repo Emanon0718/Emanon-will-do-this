@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { Resend } from "resend";
+import { translate } from "@vitalets/google-translate-api";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const TO_EMAIL = process.env.TO_EMAIL;
@@ -41,12 +42,33 @@ console.log(`获取到 ${repos.length} 个热门仓库`);
 
 const top10 = repos.slice(0, 10);
 
+// 翻译仓库描述为中文
+console.log("正在翻译描述...");
+for (const r of top10) {
+  if (r.description) {
+    try {
+      const { text } = await translate(r.description, {
+        to: "zh-CN",
+        fetchOptions: { signal: AbortSignal.timeout(10000) },
+      });
+      r.descZh = text;
+      await new Promise((r) => setTimeout(r, 300));
+    } catch (e) {
+      console.error(`  翻译失败: ${r.name} — ${e.message}`);
+      r.descZh = "";
+    }
+  } else {
+    r.descZh = "";
+  }
+}
+
 const lines = [`GitHub 每日热门仓库 — ${today}`, "", "今日 Top 10:", ""];
 
 for (let i = 0; i < top10.length; i++) {
   const r = top10[i];
   lines.push(`${i + 1}. ${r.name}`);
-  lines.push(`   ${r.description}`);
+  if (r.descZh) lines.push(`   ${r.descZh}`);
+  if (r.description) lines.push(`   (原文) ${r.description}`);
   lines.push(`   语言: ${r.language || "未知"} | ${r.url}`);
   lines.push(`   总 ⭐: ${r.totalStars} | ${r.starsToday}`);
   lines.push("");
