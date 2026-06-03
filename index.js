@@ -2,16 +2,7 @@ import * as cheerio from "cheerio";
 import { Resend } from "resend";
 import { translate } from "@vitalets/google-translate-api";
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const TO_EMAIL = process.env.TO_EMAIL;
-const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev";
-
-if (!RESEND_API_KEY || !TO_EMAIL) {
-  console.error("缺少必需的环境变量: RESEND_API_KEY 和 TO_EMAIL");
-  process.exit(1);
-}
-
-// 重试助手：最多重试 maxRetries 次，每次延迟翻倍
+// 重试助手
 async function retry(fn, { maxRetries = 3, delayMs = 2000, label = "" } = {}) {
   for (let i = 0; i <= maxRetries; i++) {
     try {
@@ -26,92 +17,6 @@ async function retry(fn, { maxRetries = 3, delayMs = 2000, label = "" } = {}) {
   }
 }
 
-// 根据日期自动判断模式：每月 1 号 → monthly，周一 → weekly，否则 daily
-// 可用 SINCE 环境变量手动覆盖
-const now = new Date();
-const SINCE = process.env.SINCE ||
-  (now.getUTCDate() === 1 ? "monthly" :
-   now.getUTCDay() === 1 ? "weekly" :
-   "daily");
-
-const periodLabels = { daily: "每日", weekly: "本周", monthly: "本月" };
-const periodLabel = periodLabels[SINCE] || "每日";
-
-const today = now.toISOString().split("T")[0];
-
-console.log(`模式: ${periodLabel} (since=${SINCE})`);
-console.log(`正在获取 ${today} 的 GitHub Trending...`);
-
-const html = await retry(
-  () => fetch(`https://github.com/trending?since=${SINCE}`, {
-    headers: { "User-Agent": "Trending-Email-Bot" },
-    signal: AbortSignal.timeout(30000),
-  }).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.text();
-  }),
-  { label: "抓取" }
-);
-
-const $ = cheerio.load(html);
-
-const repos = [];
-
-$("article.Box-row").each((_i, el) => {
-  const $el = $(el);
-  const h2 = $el.find("h2");
-  const name = h2.text().replace(/\s+/g, " ").trim();
-  const url = "https://github.com" + h2.find("a").attr("href");
-  const description = $el.find("p").first().text().trim();
-  const language = $el.find('[itemprop="programmingLanguage"]').text().trim();
-  const starsEl = $el.find("a[href$='/stargazers']").first();
-  const totalStars = starsEl.text().replace(/\s+/g, "").replace(/,/g, "") || "?";
-  const starsToday = $el.find(".float-sm-right").first().text().trim();
-
-  repos.push({ name, url, description, language, totalStars, starsToday });
-});
-
-console.log(`获取到 ${repos.length} 个热门仓库`);
-
-const top10 = repos.slice(0, 10);
-
-// 翻译仓库描述为中文（并行）
-console.log("正在翻译描述...");
-const results = await Promise.allSettled(
-  top10.map(r =>
-    r.description
-      ? translate(r.description, {
-          to: "zh-CN",
-          fetchOptions: { signal: AbortSignal.timeout(10000) },
-        })
-      : Promise.resolve(null)
-  )
-);
-results.forEach((res, i) => {
-  if (res.status === "fulfilled" && res.value) {
-    top10[i].descZh = res.value.text;
-  } else {
-    if (res.status === "rejected") {
-      console.error(`  翻译失败: ${top10[i].name} — ${res.reason.message}`);
-    }
-    top10[i].descZh = "";
-  }
-});
-
-const lines = [`GitHub ${periodLabel}热门仓库 — ${today}`, "", "今日 Top 10:", ""];
-
-for (let i = 0; i < top10.length; i++) {
-  const r = top10[i];
-  lines.push(`${i + 1}. ${r.name}`);
-  if (r.descZh) lines.push(`   ${r.descZh}`);
-  if (r.description) lines.push(`   (原文) ${r.description}`);
-  lines.push(`   语言: ${r.language || "未知"} | ${r.url}`);
-  lines.push(`   总 ⭐: ${r.totalStars} | ${r.starsToday}`);
-  lines.push("");
-}
-
-const body = lines.join("\n");
-
 // 语言颜色映射
 const langColors = {
   JavaScript: "#f1e05a", TypeScript: "#3178c6", Python: "#3572A5",
@@ -125,7 +30,7 @@ function langDot(lang) {
   return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:4px;vertical-align:middle"></span>`;
 }
 
-function buildHtml(top10, today) {
+function buildHtml(top10, today, periodLabel) {
   const cards = top10.map((r, i) => {
     const stars = Number(r.totalStars) || 0;
     const starsFmt = stars >= 1000 ? (stars / 1000).toFixed(1) + "k" : String(stars);
@@ -171,32 +76,135 @@ function buildHtml(top10, today) {
 </html>`;
 }
 
-const htmlBody = buildHtml(top10, today);
-
-console.log("--- 邮件内容预览 ---");
-console.log(body);
-console.log("--- 预览结束 ---");
-
-const resend = new Resend(RESEND_API_KEY);
-
-const { data, error } = await retry(
-  async () => {
-    const result = await resend.emails.send({
-      from: `GitHub Trending <${FROM_EMAIL}>`,
-      to: [TO_EMAIL],
-      subject: `GitHub ${periodLabel}热门仓库 — ${today}`,
-      text: body,
-      html: htmlBody,
-    });
-    if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
-    return result;
-  },
-  { label: "发送" }
-);
-
-if (error) {
-  console.error("邮件发送失败:", error);
-  process.exit(1);
+function buildText(top10, today, periodLabel) {
+  const lines = [`GitHub ${periodLabel}热门仓库 — ${today}`, "", "今日 Top 10:", ""];
+  for (let i = 0; i < top10.length; i++) {
+    const r = top10[i];
+    lines.push(`${i + 1}. ${r.name}`);
+    if (r.descZh) lines.push(`   ${r.descZh}`);
+    if (r.description) lines.push(`   (原文) ${r.description}`);
+    lines.push(`   语言: ${r.language || "未知"} | ${r.url}`);
+    lines.push(`   总 ⭐: ${r.totalStars} | ${r.starsToday}`);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
-console.log("邮件发送成功!", data);
+async function main() {
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+  const TO_EMAIL = process.env.TO_EMAIL;
+  const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev";
+
+  if (!RESEND_API_KEY || !TO_EMAIL) {
+    throw new Error("缺少必需的环境变量: RESEND_API_KEY 和 TO_EMAIL");
+  }
+
+  const now = new Date();
+  const SINCE = process.env.SINCE ||
+    (now.getUTCDate() === 1 ? "monthly" :
+     now.getUTCDay() === 1 ? "weekly" :
+     "daily");
+
+  const periodLabels = { daily: "每日", weekly: "本周", monthly: "本月" };
+  const periodLabel = periodLabels[SINCE] || "每日";
+  const today = now.toISOString().split("T")[0];
+
+  console.log(`模式: ${periodLabel} (since=${SINCE})`);
+  console.log(`正在获取 ${today} 的 GitHub Trending...`);
+
+  const html = await retry(
+    () => fetch(`https://github.com/trending?since=${SINCE}`, {
+      headers: { "User-Agent": "Trending-Email-Bot" },
+      signal: AbortSignal.timeout(30000),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.text();
+    }),
+    { label: "抓取" }
+  );
+
+  const $ = cheerio.load(html);
+  const repos = [];
+
+  $("article.Box-row").each((_i, el) => {
+    const $el = $(el);
+    const h2 = $el.find("h2");
+    const name = h2.text().replace(/\s+/g, " ").trim();
+    const url = "https://github.com" + h2.find("a").attr("href");
+    const description = $el.find("p").first().text().trim();
+    const language = $el.find('[itemprop="programmingLanguage"]').text().trim();
+    const starsEl = $el.find("a[href$='/stargazers']").first();
+    const totalStars = starsEl.text().replace(/\s+/g, "").replace(/,/g, "") || "?";
+    const starsToday = $el.find(".float-sm-right").first().text().trim();
+
+    repos.push({ name, url, description, language, totalStars, starsToday });
+  });
+
+  console.log(`获取到 ${repos.length} 个热门仓库`);
+  const top10 = repos.slice(0, 10);
+
+  // 翻译描述
+  console.log("正在翻译描述...");
+  const results = await Promise.allSettled(
+    top10.map(r =>
+      r.description
+        ? translate(r.description, {
+            to: "zh-CN",
+            fetchOptions: { signal: AbortSignal.timeout(10000) },
+          })
+        : Promise.resolve(null)
+    )
+  );
+  results.forEach((res, i) => {
+    if (res.status === "fulfilled" && res.value) {
+      top10[i].descZh = res.value.text;
+    } else {
+      if (res.status === "rejected") {
+        console.error(`  翻译失败: ${top10[i].name} — ${res.reason.message}`);
+      }
+      top10[i].descZh = "";
+    }
+  });
+
+  const textBody = buildText(top10, today, periodLabel);
+  const htmlBody = buildHtml(top10, today, periodLabel);
+
+  console.log("--- 邮件内容预览 ---");
+  console.log(textBody);
+  console.log("--- 预览结束 ---");
+
+  const resend = new Resend(RESEND_API_KEY);
+  const { data, error } = await retry(
+    async () => {
+      const result = await resend.emails.send({
+        from: `GitHub Trending <${FROM_EMAIL}>`,
+        to: [TO_EMAIL],
+        subject: `GitHub ${periodLabel}热门仓库 — ${today}`,
+        text: textBody,
+        html: htmlBody,
+      });
+      if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+      return result;
+    },
+    { label: "发送" }
+  );
+
+  if (error) {
+    throw new Error(`邮件发送失败: ${JSON.stringify(error)}`);
+  }
+
+  console.log("邮件发送成功!", data?.id);
+  return data;
+}
+
+// SCF entry point
+export async function main_handler(event, context) {
+  try {
+    await main();
+    return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+  } catch (err) {
+    console.error("\n致命错误:", err.message);
+    console.error(err.stack);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  }
+}
